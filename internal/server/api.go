@@ -43,6 +43,8 @@ func StartServer() {
 
 	routerV1.Get("/healthz", handleHealthz)
 	routerV1.Get("/err", handleError)
+
+	routerV1.Get("/users", cfg.handleGetUserByAPIKey)
 	routerV1.Post("/users", cfg.handleCreateUser)
 
 	router.Mount("/v1", routerV1)
