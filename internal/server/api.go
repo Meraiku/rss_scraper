@@ -44,8 +44,11 @@ func StartServer() {
 	routerV1.Get("/healthz", handleHealthz)
 	routerV1.Get("/err", handleError)
 
-	routerV1.Get("/users", cfg.handleGetUserByAPIKey)
+	routerV1.Get("/users", cfg.middlewareAuth(cfg.handleGetUsers))
 	routerV1.Post("/users", cfg.handleCreateUser)
+
+	routerV1.Get("/feeds", cfg.handleGetFeeds)
+	routerV1.Post("/feeds", cfg.middlewareAuth(cfg.handleCreateFeed))
 
 	router.Mount("/v1", routerV1)
 
