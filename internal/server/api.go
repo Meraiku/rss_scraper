@@ -5,6 +5,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/cors"
 )
 
 func StartServer() {
@@ -13,14 +16,19 @@ func StartServer() {
 		log.Fatal("PORT environment variable is not set")
 	}
 
-	mux := http.NewServeMux()
+	router := chi.NewRouter()
+	router.Use(cors.AllowAll().Handler)
 
-	mux.HandleFunc("GET /v1/healthz", handleHealthz)
-	mux.HandleFunc("GET /v1/err", handleError)
+	routerV1 := chi.NewRouter()
+
+	routerV1.Get("/healthz", handleHealthz)
+	routerV1.Get("/err", handleError)
+
+	router.Mount("/v1", routerV1)
 
 	srv := &http.Server{
 		Addr:    ":" + port,
-		Handler: mux,
+		Handler: router,
 	}
 
 	fmt.Printf("Server starting at: %s\n", srv.Addr)
