@@ -17,7 +17,7 @@ func handleError(w http.ResponseWriter, r *http.Request) {
 	respondWithError(w, http.StatusInternalServerError, "Internal Server Error")
 }
 
-func (cfg *apiConfig) handleCreateUser(w http.ResponseWriter, r *http.Request) {
+func (cfg *ApiConfig) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	type body struct {
 		Name string `json:"name"`
 	}
@@ -42,15 +42,20 @@ func (cfg *apiConfig) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusCreated, dbUserToUser(dbUser))
 }
 
-func (cfg *apiConfig) handleGetUsers(w http.ResponseWriter, r *http.Request, user database.User) {
+func (cfg *ApiConfig) handleGetUsers(w http.ResponseWriter, r *http.Request, user database.User) {
 
 	respondWithJSON(w, 200, dbUserToUser(user))
 }
 
-func (cfg *apiConfig) handleCreateFeed(w http.ResponseWriter, r *http.Request, user database.User) {
+func (cfg *ApiConfig) handleCreateFeed(w http.ResponseWriter, r *http.Request, user database.User) {
 	type parameters struct {
 		Name string `json:"name"`
 		URL  string `json:"url"`
+	}
+
+	type response struct {
+		Feed       Feed       `json:"feed"`
+		FeedFollow FeedFollow `json:"feed_follow"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -74,21 +79,93 @@ func (cfg *apiConfig) handleCreateFeed(w http.ResponseWriter, r *http.Request, u
 		return
 	}
 
-	respondWithJSON(w, 200, dbFeedToFeed(feed))
+	feedFollow, err := cfg.DB.CreateFeedFollow(r.Context(), database.CreateFeedFollowParams{
+		ID:        uuid.New(),
+		FeedID:    feed.ID,
+		UserID:    user.ID,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	})
+	if err != nil {
+		respondWithError(w, 400, "Error creating feed follow")
+		return
+	}
+
+	respondWithJSON(w, 201, response{
+		Feed:       dbFeedToFeed(feed),
+		FeedFollow: dbFollowToFollow(feedFollow),
+	})
 }
 
-func (cfg *apiConfig) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
+func (cfg *ApiConfig) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 
 	dbFeeds, err := cfg.DB.GetFeeds(r.Context())
 	if err != nil {
 		respondWithError(w, 500, "Error getting feeds")
 		return
 	}
-	feeds := []Feed{}
 
-	for _, dbFeed := range dbFeeds {
-		feeds = append(feeds, dbFeedToFeed(dbFeed))
+	respondWithJSON(w, 200, dbFeedsToFeeds(dbFeeds))
+}
+
+func (cfg *ApiConfig) handleCreateFeedFollow(w http.ResponseWriter, r *http.Request, user database.User) {
+	type parameters struct {
+		FeedId uuid.UUID `json:"feed_id"`
 	}
 
-	respondWithJSON(w, http.StatusCreated, feeds)
+	decoder := json.NewDecoder(r.Body)
+	params := parameters{}
+	err := decoder.Decode(&params)
+	if err != nil {
+		respondWithError(w, 400, "")
+		return
+	}
+
+	feedFollow, err := cfg.DB.CreateFeedFollow(r.Context(), database.CreateFeedFollowParams{
+		ID:        uuid.New(),
+		FeedID:    params.FeedId,
+		UserID:    user.ID,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	})
+	if err != nil {
+		respondWithError(w, 400, "Error following feed")
+		return
+	}
+
+	respondWithJSON(w, 201, dbFollowToFollow(feedFollow))
+}
+
+func (cfg *ApiConfig) handleDeleteFeedFollow(w http.ResponseWriter, r *http.Request, user database.User) {
+
+	follow_idStr := r.PathValue("feedFollowID")
+	if err := uuid.Validate(follow_idStr); err != nil {
+		respondWithError(w, 403, "Invalid follow ID")
+	}
+
+	follow_id, err := uuid.Parse(follow_idStr)
+	if err != nil {
+		respondWithError(w, 500, "Error parsing id")
+		return
+	}
+
+	if err = cfg.DB.DeleteFeedFollow(r.Context(), database.DeleteFeedFollowParams{
+		ID:     follow_id,
+		UserID: user.ID,
+	}); err != nil {
+		respondWithError(w, 400, err.Error())
+	}
+
+	w.WriteHeader(http.StatusOK)
+
+}
+func (cfg *ApiConfig) handleGetFeedFollows(w http.ResponseWriter, r *http.Request, user database.User) {
+
+	dbFeedFollows, err := cfg.DB.GetFeedFollows(r.Context(), user.ID)
+	if err != nil {
+		respondWithError(w, 500, "Error getting feed follows")
+		return
+	}
+
+	respondWithJSON(w, 200, dbFollowsToFollows(dbFeedFollows))
 }

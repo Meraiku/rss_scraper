@@ -10,9 +10,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
 	"github.com/meraiku/rss_scraper/internal/database"
+	"github.com/meraiku/rss_scraper/internal/scraper"
 )
 
-type apiConfig struct {
+type ApiConfig struct {
 	DB *database.Queries
 }
 
@@ -32,9 +33,11 @@ func StartServer() {
 		log.Fatalf("Error connecting database: %s", err)
 	}
 
-	cfg := apiConfig{
+	cfg := ApiConfig{
 		DB: database.New(db),
 	}
+
+	go scraper.StartScraper(cfg.DB)
 
 	router := chi.NewRouter()
 	router.Use(cors.AllowAll().Handler)
@@ -49,6 +52,10 @@ func StartServer() {
 
 	routerV1.Get("/feeds", cfg.handleGetFeeds)
 	routerV1.Post("/feeds", cfg.middlewareAuth(cfg.handleCreateFeed))
+
+	routerV1.Get("/feed_follows", cfg.middlewareAuth(cfg.handleGetFeedFollows))
+	routerV1.Post("/feed_follows", cfg.middlewareAuth(cfg.handleCreateFeedFollow))
+	routerV1.Delete("/feed_follows/{feedFollowID}", cfg.middlewareAuth(cfg.handleDeleteFeedFollow))
 
 	router.Mount("/v1", routerV1)
 

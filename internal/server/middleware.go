@@ -10,7 +10,7 @@ import (
 
 type authHandler func(http.ResponseWriter, *http.Request, database.User)
 
-func (cfg *apiConfig) middlewareAuth(handler authHandler) http.HandlerFunc {
+func (cfg *ApiConfig) middlewareAuth(handler authHandler) http.HandlerFunc {
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		apiKey, err := auth.GetAPIKey(r.Header)
