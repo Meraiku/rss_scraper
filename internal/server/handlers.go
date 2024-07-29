@@ -2,7 +2,9 @@ package server
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -159,6 +161,7 @@ func (cfg *ApiConfig) handleDeleteFeedFollow(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusOK)
 
 }
+
 func (cfg *ApiConfig) handleGetFeedFollows(w http.ResponseWriter, r *http.Request, user database.User) {
 
 	dbFeedFollows, err := cfg.DB.GetFeedFollows(r.Context(), user.ID)
@@ -168,4 +171,27 @@ func (cfg *ApiConfig) handleGetFeedFollows(w http.ResponseWriter, r *http.Reques
 	}
 
 	respondWithJSON(w, 200, dbFollowsToFollows(dbFeedFollows))
+}
+
+func (cfg *ApiConfig) handleGetPostsByUser(w http.ResponseWriter, r *http.Request, user database.User) {
+
+	limitStr := r.URL.Query().Get("limit")
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil {
+		log.Printf("Error converting limit number: %s", err)
+	}
+	if limit == 0 {
+		limit = 10
+	}
+
+	dbPosts, err := cfg.DB.GetPostsByUser(r.Context(), database.GetPostsByUserParams{
+		Limit:  int32(limit),
+		UserID: user.ID,
+	})
+	if err != nil {
+		respondWithError(w, 500, "Error getting feed follows")
+		return
+	}
+
+	respondWithJSON(w, 200, dbPostsToPosts(dbPosts))
 }

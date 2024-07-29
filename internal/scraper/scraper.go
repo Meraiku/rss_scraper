@@ -2,90 +2,78 @@ package scraper
 
 import (
 	"context"
-	"encoding/xml"
+	"database/sql"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/meraiku/rss_scraper/internal/database"
 )
 
-type Blog struct {
-	Channel struct {
-		Title       string `xml:"title"`
-		Link        string `xml:"link"`
-		Description string `xml:"description"`
-		Language    string `xml:"language"`
-		Post        []Post `xml:"item"`
-	} `xml:"channel"`
-}
+func StartScraper(db *database.Queries, concurrency int, timeout time.Duration) {
 
-type Post struct {
-	Title       string `xml:"title"`
-	Link        string `xml:"link"`
-	PubDate     string `xml:"pubDate"`
-	Description string `xml:"description"`
-}
+	fmt.Printf("Starting scrapper with %d goroutines and %v seconds timeout\n", concurrency, timeout.Seconds())
 
-func StartScraper(db *database.Queries) {
-	ctx := context.TODO()
+	ctx := context.Background()
+	ticker := time.NewTicker(timeout)
 
 	var wg sync.WaitGroup
 
-	for {
-		blogs := []Blog{}
-
-		feeds, err := db.GetNextFeedsToFetch(ctx, 10)
+	for ; ; <-ticker.C {
+		feeds, err := db.GetNextFeedsToFetch(ctx, int32(concurrency))
 		if err != nil {
 			log.Printf("Error getting feeds to fetch: %s", err)
-			time.Sleep(time.Minute)
 			continue
 		}
 
-		wg.Add(len(feeds))
 		for _, feed := range feeds {
-			blog, err := FetchDataByURL(feed.Url)
-			if err != nil {
-				log.Printf("Error getting posts from feed '%s': %s", feed.Name, err)
-				continue
-			}
-			blogs = append(blogs, blog)
-			db.MarkFeedFetched(ctx, feed.ID)
-			wg.Done()
+			wg.Add(1)
+			go scrapFeed(&wg, db, feed)
 		}
 
 		wg.Wait()
-		for _, v := range blogs {
-			for _, item := range v.Channel.Post {
-				fmt.Printf("Post from blog %s. Title: %s\n", v.Channel.Title, item.Title)
-			}
-		}
-		time.Sleep(time.Minute)
 	}
 }
 
-func FetchDataByURL(url string) (Blog, error) {
-	blog := Blog{}
+func scrapFeed(wg *sync.WaitGroup, db *database.Queries, feed database.Feed) {
+	defer wg.Done()
 
-	resp, err := http.Get(url)
+	blog, err := FetchDataByURL(feed.Url)
 	if err != nil {
-		return Blog{}, err
-	}
-	if resp.StatusCode > 399 {
-		return Blog{}, fmt.Errorf("status code %d", resp.StatusCode)
+		log.Printf("Error getting posts from feed '%s': %s", feed.Url, err)
+		return
 	}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return Blog{}, err
+	for _, item := range blog.Channel.Post {
+
+		publishedAt, err := time.Parse(time.RFC1123Z, item.PubDate)
+		if err != nil {
+			log.Printf("Error parsing time: %s", err)
+		}
+
+		description := sql.NullString{}
+		if item.Description != "" {
+			description.String = item.Description
+			description.Valid = true
+		}
+
+		err = db.CreatePost(context.Background(), database.CreatePostParams{
+			ID:          uuid.New(),
+			CreatedAt:   time.Now(),
+			UpdatedAt:   time.Now(),
+			Title:       item.Title,
+			Url:         item.Link,
+			Description: description,
+			PublishedAt: publishedAt.UTC(),
+			FeedID:      feed.ID,
+		})
+		if err != nil {
+			//log.Println(err)
+			continue
+		}
 	}
 
-	if err = xml.Unmarshal(body, &blog); err != nil {
-		return Blog{}, err
-	}
-
-	return blog, nil
+	db.MarkFeedFetched(context.Background(), feed.ID)
 }

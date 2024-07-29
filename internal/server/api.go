@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
@@ -37,7 +38,7 @@ func StartServer() {
 		DB: database.New(db),
 	}
 
-	go scraper.StartScraper(cfg.DB)
+	go scraper.StartScraper(cfg.DB, 10, time.Minute)
 
 	router := chi.NewRouter()
 	router.Use(cors.AllowAll().Handler)
@@ -56,6 +57,8 @@ func StartServer() {
 	routerV1.Get("/feed_follows", cfg.middlewareAuth(cfg.handleGetFeedFollows))
 	routerV1.Post("/feed_follows", cfg.middlewareAuth(cfg.handleCreateFeedFollow))
 	routerV1.Delete("/feed_follows/{feedFollowID}", cfg.middlewareAuth(cfg.handleDeleteFeedFollow))
+
+	routerV1.Get("/posts", cfg.middlewareAuth(cfg.handleGetPostsByUser))
 
 	router.Mount("/v1", routerV1)
 
